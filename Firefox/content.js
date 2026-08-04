@@ -2193,10 +2193,33 @@
 							});
 						}
 					}
-					// Para URLs normales (data URLs o http/https)
-					const resp = await fetch(src);
-					const blob = await resp.blob();
-					return createImageBitmap(blob);
+					// Si es una URL data (base64), usar elemento Image directamente para evitar problemas de CSP
+					if (typeof src === 'string' && src.startsWith('data:')) {
+						return new Promise((resolve, reject) => {
+							const img = new Image();
+							img.onload = () => {
+								createImageBitmap(img).then(resolve).catch(reject);
+							};
+							img.onerror = () => reject(new Error('Failed to load image from data URL'));
+							img.src = src;
+						});
+					}
+					// Para URLs normales (http/https)
+					try {
+						const resp = await fetch(src);
+						const blob = await resp.blob();
+						return createImageBitmap(blob);
+					} catch (fetchError) {
+						// Fallback para URLs http/https
+						return new Promise((resolve, reject) => {
+							const img = new Image();
+							img.onload = () => {
+								createImageBitmap(img).then(resolve).catch(reject);
+							};
+							img.onerror = () => reject(new Error('Failed to load image from URL'));
+							img.src = src;
+						});
+					}
 				};
 				const endIdx = Math.min(end_index, capturex_capture_array.length - 1);
 				const items = new Array(endIdx + 1);

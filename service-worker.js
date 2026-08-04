@@ -108,17 +108,17 @@ setupKeepAlive();
 function actualizarIcono(theme) {
   const isDark = theme === 'dark';
   
-  // Usar chrome.runtime.getURL() para obtener rutas absolutas de la extensión
+  // Usar rutas relativas (chrome.action.setIcon no acepta URLs absolutas de chrome.runtime.getURL)
   const iconPaths = isDark ? {
-    "16": chrome.runtime.getURL("Media/SQA-16.png"),
-    "32": chrome.runtime.getURL("Media/SQA-32.png"),
-    "48": chrome.runtime.getURL("Media/SQA-48.png"),
-    "128": chrome.runtime.getURL("Media/SQA-128.png")
+    "16": "Media/SQA-16.png",
+    "32": "Media/SQA-32.png",
+    "48": "Media/SQA-48.png",
+    "128": "Media/SQA-128.png"
   } : {
-    "16": chrome.runtime.getURL("Media/SQA1-16.png"),
-    "32": chrome.runtime.getURL("Media/SQA1-32.png"),
-    "48": chrome.runtime.getURL("Media/SQA1-48.png"),
-    "128": chrome.runtime.getURL("Media/SQA1-128.png")
+    "16": "Media/SQA1-16.png",
+    "32": "Media/SQA1-32.png",
+    "48": "Media/SQA1-48.png",
+    "128": "Media/SQA1-128.png"
   };
 
   chrome.action.setIcon({ path: iconPaths }, () => {

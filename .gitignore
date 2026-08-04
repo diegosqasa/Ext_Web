@@ -1,1 +1,1 @@
-(js/background/CaptureEngine.js, js/background/capture-logic.js)
+Nothing should be ignored based on the provided file changes. The only modified file is a JavaScript source file (`js/background/capture-logic.js`), which is a source code file that should not be ignored. There are no build artifacts, dependencies, or temporary files in the changes that would warrant adding ignore rules.

@@ -129,6 +129,16 @@ export async function executeCapture(tab, actionName) {
     // Sólo full-page y visible; selection mantiene content script (overlay + crop)
     if (actionName === "captureAllPageScreenshot" || actionName === "captureVisibleOnly") {
         try {
+            // Optimización crítica: import() dinámico está prohibido en Service Workers
+            // Detectar contexto inmediatamente para evitar error esperado
+            const isServiceWorker = typeof self !== 'undefined' && 
+                                    self.constructor.name === 'ServiceWorkerGlobalScope';
+            
+            if (isServiceWorker) {
+                console.debug('[capture-logic] Service Worker detectado - skip debugger fast-path (optimización)');
+                throw new Error('Service Worker context - import() no disponible');
+            }
+            
             const CaptureEngine = await withTimeout(
                 import('./CaptureEngine.js'),
                 DEBUGGER_TIMEOUT_MS,
@@ -208,7 +218,11 @@ export async function executeCapture(tab, actionName) {
             }
         } catch (err) {
             const errorClass = classifyError(err);
-            if (errorClass === 'expected') {
+            
+            // Optimización: errores de Service Worker son esperados, no loguear como warning
+            const isServiceWorkerError = err.message && err.message.includes('Service Worker');
+            
+            if (errorClass === 'expected' || isServiceWorkerError) {
                 console.debug('[capture-logic] Error esperado en fast-path:', err.message);
             } else {
                 console.warn('[capture-logic] Fast-path debugger falló, usando content script:', err.message);

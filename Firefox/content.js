@@ -27,11 +27,23 @@
 					context: canvas.getContext('2d'),
 					isOffscreen: true,
 					toBlob: function (callback, mimeType = 'image/png') {
+						// Firefox puede lanzar error "write-only canvas" con OffscreenCanvas
+						// Implementamos fallback a canvas tradicional
 						canvas.convertToBlob({ type: mimeType })
 							.then(callback)
 							.catch(err => {
-								console.error("Error converting OffscreenCanvas to Blob:", err);
-								callback(null);
+								console.warn("OffscreenCanvas.convertToBlob falló, usando fallback:", err);
+								try {
+									const tempCanvas = document.createElement('canvas');
+									tempCanvas.width = width;
+									tempCanvas.height = height;
+									const tempCtx = tempCanvas.getContext('2d');
+									tempCtx.drawImage(canvas, 0, 0);
+									tempCanvas.toBlob(callback, mimeType);
+								} catch (fallbackErr) {
+									console.error("Error en fallback de OffscreenCanvas a Blob:", fallbackErr);
+									callback(null);
+								}
 							});
 					},
 					toDataURL: function (mimeType = 'image/png') {

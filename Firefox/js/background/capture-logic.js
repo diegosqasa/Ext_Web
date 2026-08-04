@@ -239,36 +239,32 @@ export async function executeCapture(tab, actionName) {
 
     // Fallback: content script (para Firefox o si debugger falla)
     try {
-        const isLoaded = await withTimeout(checkContentScript(tab.id), 3000, 'checkContentScript');
-        if (!isLoaded) {
-            await withTimeout(
-                chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] }),
-                5000,
-                'executeScript content.js'
-            );
-            await new Promise(r => setTimeout(r, 150));
-        }
-
+        // Firefox: Inyectar content script directamente (la inyección repetida es segura)
+        console.debug('[capture-logic] Inyectando content script en tabId:', tab.id);
+        
+        await withTimeout(
+            chrome.scripting.executeScript({ 
+                target: { tabId: tab.id }, 
+                files: ["content.js"] 
+            }),
+            8000,
+            'executeScript content.js'
+        );
+        
+        // Esperar a que el content script esté listo
+        await new Promise(r => setTimeout(r, 300));
+        
         const sent = await retrySendMessage(tab.id, { action: actionName });
         if (!sent) {
             captureInProgress.delete(tab.id);
-            markCaptureError("No se pudo iniciar la captura.", tab.id);
+            markCaptureError("No se pudo comunicar con el content script.", tab.id);
         }
     } catch (err) {
         const errorClass = classifyError(err);
         logErrorToBuffer(err, 'content-script-fallback');
-        if (err.message && err.message.includes('cannot be scripted')) {
-            console.warn('[capture-logic] Content script blocked, fallback a captura directa');
-            captureDirectCapture(tab);
-        } else {
-            captureInProgress.delete(tab.id);
-            if (errorClass === 'critical') {
-                console.error('[capture-logic] Error crítico en content script:', err.message);
-            } else {
-                console.warn('[capture-logic] Error en content script:', err.message);
-            }
-            markCaptureError(err.message, tab.id);
-        }
+        console.error('[capture-logic] Error fatal al inyectar content script:', err.message);
+        captureInProgress.delete(tab.id);
+        markCaptureError(`Error inyectando script: ${err.message}`, tab.id);
     }
 }
 

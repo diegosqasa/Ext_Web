@@ -1,1 +1,22 @@
-Nothing needs to be added to .gitignore since only a manifest.json file was modified and no build artifacts, dependencies, or temporary files were detected in the changes.
+```
+# Build artifacts
+*.xpi
+dist/
+build/
+
+# Dependencies
+node_modules/
+
+# Logs and temp files
+*.log
+*.tmp
+
+# Editors
+.vscode/
+.idea/
+
+# Environment
+.env
+.env.local
+*.env.*
+```

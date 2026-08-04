@@ -7,8 +7,89 @@ import { workerState, captureStatus, captureInProgress } from './state.js';
 import { updateCaptureStatus } from './utils.js';
 import { CAPTURE_VISIBLE_TAB_MIN_INTERVAL_MS } from './constants.js';
 
+// ============================================================================
+// ERROR BUFFER CIRCULAR (para diagnóstico post-mortem)
+// ============================================================================
+const ERROR_BUFFER_SIZE = 50;
+const errorBuffer = [];
+let errorBufferIndex = 0;
+
+function logErrorToBuffer(error, context) {
+    const entry = {
+        timestamp: Date.now(),
+        context,
+        message: error?.message || String(error),
+        stack: error?.stack || null
+    };
+    errorBuffer[errorBufferIndex] = entry;
+    errorBufferIndex = (errorBufferIndex + 1) % ERROR_BUFFER_SIZE;
+}
+
+export function getErrorBuffer() {
+    return [...errorBuffer];
+}
+
+// ============================================================================
+// CLASIFICACIÓN DE ERRORES
+// ============================================================================
+const CRITICAL_ERRORS = [
+    'tab was closed',
+    'No tab with id',
+    'cannot access contents',
+    'extensions gallery cannot be scripted'
+];
+
+const EXPECTED_ERRORS = [
+    'frame with id 0 is showing error page',
+    'showing error page',
+    'Failed to fetch'
+];
+
+function classifyError(error) {
+    const message = (error?.message || String(error)).toLowerCase();
+    if (CRITICAL_ERRORS.some(err => message.includes(err))) {
+        return 'critical';
+    }
+    if (EXPECTED_ERRORS.some(err => message.includes(err))) {
+        return 'expected';
+    }
+    return 'unknown';
+}
+
+// ============================================================================
+// TIMEOUTS CONTROLADOS
+// ============================================================================
+const DEFAULT_TIMEOUT_MS = 8000;
+const DEBUGGER_TIMEOUT_MS = 12000;
+
+function withTimeout(promise, ms = DEFAULT_TIMEOUT_MS, context = 'operation') {
+    let timeoutId;
+    const timeoutPromise = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => {
+            logErrorToBuffer(new Error(`Timeout after ${ms}ms in ${context}`), context);
+            reject(new Error(`Timeout: ${context}`));
+        }, ms);
+    });
+    return Promise.race([
+        promise.finally(() => clearTimeout(timeoutId)),
+        timeoutPromise
+    ]);
+}
+
+// ============================================================================
+// CLEANUP DE EVENT LISTENERS
+// ============================================================================
 let _healingCleanup = null;
 export function setHealingCleanup(fn) { _healingCleanup = fn; }
+
+function cleanupListeners(tabId) {
+    try {
+        if (_healingCleanup) _healingCleanup();
+        chrome.debugger.detach({ tabId }).catch(() => {});
+    } catch (e) {
+        console.warn('[cleanup] Error detaching debugger:', e.message);
+    }
+}
 
 export async function executeCapture(tab, actionName) {
     const tabUrl = tab.url || '';
@@ -48,20 +129,47 @@ export async function executeCapture(tab, actionName) {
     // Sólo full-page y visible; selection mantiene content script (overlay + crop)
     if (actionName === "captureAllPageScreenshot" || actionName === "captureVisibleOnly") {
         try {
-            const CaptureEngine = await import('./CaptureEngine.js');
+            const CaptureEngine = await withTimeout(
+                import('./CaptureEngine.js'),
+                DEBUGGER_TIMEOUT_MS,
+                'import CaptureEngine'
+            );
             if (CaptureEngine.isAvailable && await CaptureEngine.isAvailable()) {
-                await CaptureEngine.init();
+                await withTimeout(CaptureEngine.init(), DEBUGGER_TIMEOUT_MS, 'CaptureEngine.init');
                 const browserInfo = await _getBrowserInfo();
                 browserInfo.url = tab.url || '';
                 let dataUrl;
 
                 if (actionName === "captureAllPageScreenshot") {
-                    dataUrl = await CaptureEngine.captureFullPage(tab.id, browserInfo);
+                    dataUrl = await withTimeout(
+                        CaptureEngine.captureFullPage(tab.id, browserInfo),
+                        DEBUGGER_TIMEOUT_MS,
+                        'captureFullPage'
+                    );
                 } else {
-                    dataUrl = await CaptureEngine.captureVisible(tab.id, browserInfo);
+                    dataUrl = await withTimeout(
+                        CaptureEngine.captureVisible(tab.id, browserInfo),
+                        DEBUGGER_TIMEOUT_MS,
+                        'captureVisible'
+                    );
                 }
 
+                // Validación de dimensiones antes de procesar
                 if (dataUrl && dataUrl.dataUrl) {
+                    try {
+                        const testBlob = await fetch(dataUrl.dataUrl).then(r => r.blob());
+                        const bitmap = await createImageBitmap(testBlob);
+                        if (bitmap.width < 100 || bitmap.height < 100) {
+                            bitmap.close();
+                            throw new Error('Captura inválida: dimensiones demasiado pequeñas');
+                        }
+                        bitmap.close();
+                    } catch (dimErr) {
+                        console.warn('[capture-logic] Validación de dimensiones falló:', dimErr.message);
+                        logErrorToBuffer(dimErr, 'dimension-validation');
+                        throw dimErr;
+                    }
+
                     const blob = dataUrl.blob || await (await fetch(dataUrl.dataUrl)).blob();
                     const osLabel = browserInfo?.os || (await _detectOS());
                     const browserLabel = browserInfo?.name && browserInfo?.version
@@ -99,22 +207,32 @@ export async function executeCapture(tab, actionName) {
                 }
             }
         } catch (err) {
-            console.warn('[capture-logic] Fast-path debugger falló, usando content script:', err.message);
+            const errorClass = classifyError(err);
+            if (errorClass === 'expected') {
+                console.debug('[capture-logic] Error esperado en fast-path:', err.message);
+            } else {
+                console.warn('[capture-logic] Fast-path debugger falló, usando content script:', err.message);
+                logErrorToBuffer(err, 'debugger-fallback');
+            }
             // Telemetría de fallback: detectar cuándo el fullpage no usa debugger
             try {
                 const prev = (globalThis.__sqaFallbackCount || 0) + 1;
                 globalThis.__sqaFallbackCount = prev;
-                console.warn(`[capture-logic] Fallback a content script #${prev} — modo=${actionName}, motivo=${err.message}`);
+                console.debug(`[capture-logic] Fallback a content script #${prev} — modo=${actionName}, motivo=${err.message}`);
             } catch (te) { /* telemetría no crítica */ }
         }
     }
 
     // Fallback: content script (para Firefox o si debugger falla)
     try {
-        const isLoaded = await checkContentScript(tab.id);
+        const isLoaded = await withTimeout(checkContentScript(tab.id), 3000, 'checkContentScript');
         if (!isLoaded) {
-            await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] });
-            await new Promise(r => setTimeout(r, 100));
+            await withTimeout(
+                chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] }),
+                5000,
+                'executeScript content.js'
+            );
+            await new Promise(r => setTimeout(r, 150));
         }
 
         const sent = await retrySendMessage(tab.id, { action: actionName });
@@ -123,11 +241,18 @@ export async function executeCapture(tab, actionName) {
             markCaptureError("No se pudo iniciar la captura.", tab.id);
         }
     } catch (err) {
+        const errorClass = classifyError(err);
+        logErrorToBuffer(err, 'content-script-fallback');
         if (err.message && err.message.includes('cannot be scripted')) {
             console.warn('[capture-logic] Content script blocked, fallback a captura directa');
             captureDirectCapture(tab);
         } else {
             captureInProgress.delete(tab.id);
+            if (errorClass === 'critical') {
+                console.error('[capture-logic] Error crítico en content script:', err.message);
+            } else {
+                console.warn('[capture-logic] Error en content script:', err.message);
+            }
             markCaptureError(err.message, tab.id);
         }
     }
@@ -212,14 +337,34 @@ async function _getBrowserInfo() {
 }
 
 async function captureDirectCapture(tab) {
+    const tabId = tab?.id;
     try {
-        const dataUrl = await new Promise((resolve, reject) => {
-            chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' }, (data) => {
-                if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
-                else resolve(data);
-            });
-        });
+        const dataUrl = await withTimeout(
+            new Promise((resolve, reject) => {
+                chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' }, (data) => {
+                    if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+                    else resolve(data);
+                });
+            }),
+            8000,
+            'captureVisibleTab'
+        );
         if (dataUrl) {
+            // Validación de dimensiones antes de enviar
+            try {
+                const testBlob = await fetch(dataUrl).then(r => r.blob());
+                const bitmap = await createImageBitmap(testBlob);
+                if (bitmap.width < 100 || bitmap.height < 100) {
+                    bitmap.close();
+                    throw new Error('Captura directa inválida: dimensiones demasiado pequeñas');
+                }
+                bitmap.close();
+            } catch (dimErr) {
+                console.warn('[capture-logic] Validación de dimensiones en captura directa falló:', dimErr.message);
+                logErrorToBuffer(dimErr, 'direct-capture-validation');
+                throw dimErr;
+            }
+
             const blob = await (await fetch(dataUrl)).blob();
             const captureTitle = tab && tab.title ? tab.title : 'Captura SQA';
             const url = tab && tab.url ? tab.url : '';
@@ -237,25 +382,38 @@ async function captureDirectCapture(tab) {
             if (resp.ok) {
                 markCaptureCompleted('Captura directa completada.');
             } else {
-                markCaptureError(`Visor rechazó la captura (HTTP ${resp.status})`, tab.id);
+                markCaptureError(`Visor rechazó la captura (HTTP ${resp.status})`, tabId);
             }
         } else {
-            markCaptureError('No se pudo capturar la página.', tab.id);
+            markCaptureError('No se pudo capturar la página.', tabId);
         }
     } catch (e) {
+        logErrorToBuffer(e, 'direct-capture');
+        const errorClass = classifyError(e);
         if (e.message && e.message.includes('Failed to fetch')) {
-            markCaptureError('App de escritorio no disponible. Inicia Evidencias SQA Desktop.', tab.id);
+            markCaptureError('App de escritorio no disponible. Inicia Evidencias SQA Desktop.', tabId);
         } else {
-            markCaptureError(e.message, tab.id);
+            if (errorClass === 'critical') {
+                console.error('[capture-logic] Error crítico en captura directa:', e.message);
+            } else {
+                console.warn('[capture-logic] Error en captura directa:', e.message);
+            }
+            markCaptureError(e.message, tabId);
         }
     } finally {
-        captureInProgress.delete(tab.id);
+        captureInProgress.delete(tabId);
+        cleanupListeners(tabId);
     }
 }
 
 async function checkContentScript(tabId) {
     return new Promise((resolve) => {
+        const timeoutId = setTimeout(() => {
+            logErrorToBuffer(new Error('Timeout en checkContentLoaded'), 'checkContentScript-timeout');
+            resolve(false);
+        }, 2500);
         chrome.tabs.sendMessage(tabId, { action: "checkContentLoaded" }, (res) => {
+            clearTimeout(timeoutId);
             if (chrome.runtime.lastError || !res || !res.loaded) resolve(false);
             else resolve(true);
         });
@@ -265,14 +423,20 @@ async function checkContentScript(tabId) {
 async function retrySendMessage(tabId, msg, retries = 3) {
     for (let i = 1; i <= retries; i++) {
         const success = await new Promise(resolve => {
+            const timeoutId = setTimeout(() => {
+                logErrorToBuffer(new Error(`Timeout en intento ${i} de sendMessage`), 'sendMessage-timeout');
+                resolve(false);
+            }, 2000);
             chrome.tabs.sendMessage(tabId, msg, () => {
+                clearTimeout(timeoutId);
                 if (chrome.runtime.lastError) resolve(false);
                 else resolve(true);
             });
         });
         if (success) return true;
-        await new Promise(r => setTimeout(r, 100 * i));
+        await new Promise(r => setTimeout(r, 150 * i));
     }
+    logErrorToBuffer(new Error(`Fallo después de ${retries} intentos`), 'sendMessage-all-retries-failed');
     return false;
 }
 
@@ -289,7 +453,10 @@ export function markCaptureCompleted(message = 'Captura completada.') {
 export function markCaptureError(message, tabId = captureStatus.tabId) {
     try {
         if (workerState.clearCompletedStatusTimer) clearTimeout(workerState.clearCompletedStatusTimer);
-        if (tabId) captureInProgress.delete(tabId);
+        if (tabId) {
+            captureInProgress.delete(tabId);
+            cleanupListeners(tabId);
+        }
         updateCaptureStatus({ active: false, phase: 'error', message: 'La captura se detuvo.', error: message || 'Error', tabId });
     } finally {
         if (_healingCleanup) _healingCleanup();

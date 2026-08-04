@@ -1,37 +1,92 @@
 const PROTOCOL_VERSION = "1.3";
 const MAX_DIM = 200000;
 const DESKTOP_HEADER_MAX_DIM = 16384;
+const MIN_CAPTURE_DIM = 100; // Dimensiones mínimas válidas
+
+// Cache de logo con estado
 let _logoBitmap = null;
+let _logoLoadPromise = null;
+let _logoLoadFailed = false;
 
 async function _loadLogo() {
-    if (_logoBitmap) return;
-    try {
-        const resp = await fetch(chrome.runtime.getURL('Media/icon-dark-128.png'));
-        const blob = await resp.blob();
-        _logoBitmap = await createImageBitmap(blob);
-    } catch {}
+    if (_logoBitmap || _logoLoadFailed) return;
+    if (_logoLoadPromise) return _logoLoadPromise;
+    
+    _logoLoadPromise = (async () => {
+        try {
+            const logoUrl = chrome.runtime.getURL('Media/icon-dark-128.png');
+            const resp = await fetch(logoUrl);
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const blob = await resp.blob();
+            _logoBitmap = await createImageBitmap(blob);
+            
+            // Validar que el logo tenga dimensiones válidas
+            if (_logoBitmap.width < 10 || _logoBitmap.height < 10) {
+                console.warn('[CaptureEngine] Logo con dimensiones inválidas:', _logoBitmap.width, _logoBitmap.height);
+                _logoBitmap.close();
+                _logoBitmap = null;
+            }
+        } catch (err) {
+            console.warn('[CaptureEngine] Error cargando logo:', err.message);
+            _logoLoadFailed = true;
+            _logoBitmap = null;
+        } finally {
+            _logoLoadPromise = null;
+        }
+    })();
+    
+    return _logoLoadPromise;
 }
+
+const DEBUGGER_ATTACH_TIMEOUT_MS = 5000;
+const DEBUGGER_SEND_TIMEOUT_MS = 8000;
 
 function _attach(tabId) {
     return new Promise((resolve, reject) => {
+        const timeoutId = setTimeout(() => {
+            console.warn('[CaptureEngine] Timeout en attach para tab', tabId);
+            reject(new Error(`Timeout attaching debugger to tab ${tabId}`));
+        }, DEBUGGER_ATTACH_TIMEOUT_MS);
+        
         chrome.debugger.attach({ tabId }, PROTOCOL_VERSION, () => {
-            if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
-            else resolve();
+            clearTimeout(timeoutId);
+            if (chrome.runtime.lastError) {
+                reject(new Error(chrome.runtime.lastError.message));
+            } else {
+                resolve();
+            }
         });
     });
 }
 
 function _detach(tabId) {
     return new Promise((resolve) => {
-        chrome.debugger.detach({ tabId }, () => resolve());
+        const timeoutId = setTimeout(() => {
+            console.debug('[CaptureEngine] Timeout en detach para tab', tabId);
+            resolve(); // Resolver de todas formas para evitar cuelgues
+        }, 3000);
+        
+        chrome.debugger.detach({ tabId }, () => {
+            clearTimeout(timeoutId);
+            resolve();
+        });
     });
 }
 
 function _send(tabId, method, params = {}) {
     return new Promise((resolve, reject) => {
+        const timeoutId = setTimeout(() => {
+            console.warn('[CaptureEngine] Timeout enviando', method, 'a tab', tabId);
+            reject(new Error(`Timeout sending ${method} to tab ${tabId}`));
+        }, DEBUGGER_SEND_TIMEOUT_MS);
+        
         chrome.debugger.sendCommand({ tabId }, method, params, (result) => {
-            if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
-            else resolve(result);
+            clearTimeout(timeoutId);
+            if (chrome.runtime.lastError) {
+                reject(new Error(chrome.runtime.lastError.message));
+            } else {
+                resolve(result);
+            }
         });
     });
 }
@@ -346,7 +401,27 @@ async function _processImage(base64, browserInfo) {
         _fetchNextEvId()
     ]);
 
-    const bitmap = await createImageBitmap(rawBlob);
+    let bitmap;
+    try {
+        bitmap = await createImageBitmap(rawBlob);
+    } catch (err) {
+        console.error('[CaptureEngine] Error creando bitmap:', err.message);
+        throw new Error('No se pudo procesar la imagen capturada');
+    }
+
+    // Validación de dimensiones mínimas
+    if (bitmap.width < MIN_CAPTURE_DIM || bitmap.height < MIN_CAPTURE_DIM) {
+        console.warn('[CaptureEngine] Captura con dimensiones inválidas:', bitmap.width, 'x', bitmap.height);
+        bitmap.close();
+        throw new Error(`Captura inválida: ${bitmap.width}x${bitmap.height}px (mínimo ${MIN_CAPTURE_DIM}px)`);
+    }
+
+    // Validación de dimensiones máximas
+    if (bitmap.width > MAX_DIM || bitmap.height > MAX_DIM) {
+        console.warn('[CaptureEngine] Captura excede dimensiones máximas:', bitmap.width, 'x', bitmap.height);
+        bitmap.close();
+        throw new Error(`Captura demasiado grande: ${bitmap.width}x${bitmap.height}px (máximo ${MAX_DIM}px)`);
+    }
 
     const browserVal = browserInfo ? `${browserInfo.name} v${browserInfo.version}` : 'N/A';
     const osVal = browserInfo ? browserInfo.os : 'N/A';
@@ -356,21 +431,30 @@ async function _processImage(base64, browserInfo) {
     // (protección OOM en _processHeaderForCapture e image-worker), así que la
     // extensión lo dibuja completo (PNG lossless) y lo marca como ya header.
     if (bitmap.width > DESKTOP_HEADER_MAX_DIM || bitmap.height > DESKTOP_HEADER_MAX_DIM) {
-        const headedBlob = await _drawHeaderOnBitmap(bitmap, evId, url, browserVal, osVal);
-        bitmap.close();
-        const headedDataUrl = await _blobToDataUrl(headedBlob);
-        return { blob: headedBlob, dataUrl: headedDataUrl, hasHeaderAlready: true };
+        try {
+            const headedBlob = await _drawHeaderOnBitmap(bitmap, evId, url, browserVal, osVal);
+            bitmap.close();
+            const headedDataUrl = await _blobToDataUrl(headedBlob);
+            return { blob: headedBlob, dataUrl: headedDataUrl, hasHeaderAlready: true };
+        } catch (headerErr) {
+            console.error('[CaptureEngine] Error dibujando header completo:', headerErr.message);
+            bitmap.close();
+            throw headerErr;
+        }
     }
 
     // Header minimal (rápido, ~200ms) solo para el dataUrl del portapapeles.
     // El PNG raw viaja sin header al escritorio, que aplica el header corporativo completo.
-    const minimalBlob = await _drawMinimalHeader(bitmap, evId, url, browserVal, osVal);
-
-    bitmap.close();
-
-    const dataUrl = await _blobToDataUrl(minimalBlob);
-
-    return { blob: rawBlob, dataUrl, hasHeaderAlready: false };
+    try {
+        const minimalBlob = await _drawMinimalHeader(bitmap, evId, url, browserVal, osVal);
+        bitmap.close();
+        const dataUrl = await _blobToDataUrl(minimalBlob);
+        return { blob: rawBlob, dataUrl, hasHeaderAlready: false };
+    } catch (headerErr) {
+        console.error('[CaptureEngine] Error dibujando header minimal:', headerErr.message);
+        bitmap.close();
+        throw headerErr;
+    }
 }
 
 export async function init() {

@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bienvenido - Evidencias SQA</title>
+    <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@800&family=Montserrat:wght@300;600&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        body { 
+            /* Fuente Montserrat para texto base */
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 300; 
+            line-height: 1.6; 
+            color: #333; 
+            margin: 0; 
+            padding: 0; 
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            background-color: #fff; 
+        }
+
+        body::before {
+            content: "";
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: url('Media/Flujo.png') no-repeat center center;
+            background-size: cover;
+            opacity: 0.3; 
+            z-index: -1;
+        }
+
+        .main-wrapper {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 40px 20px;
+        }
+
+        .content-card { 
+            background: rgba(255, 255, 255, 0.88); 
+            backdrop-filter: blur(10px);
+            max-width: 850px; 
+            width: 100%;
+            padding: 40px; 
+            border-radius: 20px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.12);
+            position: relative;
+            overflow: hidden;
+            animation: fadeIn 0.8s ease-out;
+        }
+
+        .content-card::after {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 8px;
+            background: linear-gradient(to right, #003060, #0032a7, #060b29, #ffc440, #fca311);
+            z-index: 10;
+        }
+
+        .welcome-header { text-align: center; margin-bottom: 30px; }
+        
+        .title-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 5px;
+        }
+
+        /* Fuente Exo 2 ExtraBold para títulos principales */
+        .welcome-title { 
+            font-family: 'Exo 2', sans-serif;
+            color: #003366; 
+            font-size: 2.2rem; 
+            font-weight: 800; 
+            margin: 0; 
+            text-transform: uppercase; 
+        }
+
+        .logo-title { height: 45px; width: auto; margin-top: 8px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1)); }
+
+        /* Montserrat Light/SemiBold para subtítulos */
+        .welcome-subtitle { 
+            font-family: 'Montserrat', sans-serif;
+            color: #ff9900; 
+            font-size: 1.2rem; 
+            font-weight: 600; 
+            margin: 5px 0 20px 0; 
+        }
+
+        .welcome-intro { font-size: 1.05rem; color: #444; margin-bottom: 30px; }
+
+        h2 { 
+            font-family: 'Exo 2', sans-serif;
+            font-weight: 800;
+            color: #0055aa; 
+            margin: 25px 0 15px 0; 
+            display: flex; 
+            align-items: center; 
+            border-left: 4px solid #0055aa; 
+            padding-left: 10px; 
+            font-size: 1.4rem; 
+        }
+        
+        .features-list { list-style-type: none; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        
+        .feature-item { 
+            background: rgba(255, 255, 255, 0.5); 
+            padding: 18px; 
+            border-radius: 12px; 
+            border: 1px solid rgba(0,0,0,0.05); 
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
+
+        .feature-item:hover {
+            transform: translateY(-5px);
+            background: #fff;
+            border-color: #0055aa;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.05);
+        }
+        
+        .feature-header { display: flex; align-items: center; margin-bottom: 8px; }
+        .feature-header img { width: 32px; height: 32px; margin-right: 12px; transition: transform 0.3s ease; }
+        .feature-item:hover .feature-header img { transform: scale(1.1); }
+        
+        .feature-header span { 
+            font-family: 'Montserrat', sans-serif;
+            color: #003060; 
+            font-size: 1.1rem; 
+            font-weight: 600; 
+        }
+
+        .feature-desc { font-size: 0.9rem; color: #666; padding-left: 44px; }
+
+        .note { 
+            background: rgba(252, 163, 17, 0.1); 
+            border-left: 6px solid #fca311; 
+            padding: 15px; 
+            margin: 30px 0; 
+            border-radius: 4px 12px 12px 4px; 
+            font-size: 0.95rem; 
+        }
+
+        .cta-container { text-align: center; margin-top: 20px; }
+        
+        #closeWelcome { 
+            font-family: 'Montserrat', sans-serif;
+            background: linear-gradient(135deg, #003060, #0055aa);
+            color: white; 
+            border: none; 
+            padding: 16px 65px; 
+            font-size: 1.1rem; 
+            font-weight: 600; 
+            border-radius: 50px; 
+            cursor: pointer;
+            transition: all 0.4s ease;
+            box-shadow: 0 6px 20px rgba(0, 48, 96, 0.25);
+        }
+
+        #closeWelcome:hover { 
+            background: linear-gradient(135deg, #0055aa, #003060);
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(0, 48, 96, 0.35);
+        }
+
+        @media (max-width: 700px) {
+            .features-list { grid-template-columns: 1fr; }
+            .welcome-title { font-size: 1.6rem; }
+            .logo-title { height: 35px; margin-top: 5px; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="main-wrapper">
+        <div class="content-card">
+            <div class="welcome-header">
+                <div class="title-container">
+                    <h1 class="welcome-title">BIENVENIDO A</h1>
+                    <img src="Media/SQA.png" alt="SQA" class="logo-title" />
+                    <h1 class="welcome-title">EVIDENCIAS</h1>
+                </div>
+                <p class="welcome-subtitle">Tu aliado estratégico en Calidad de Software</p>
+                <p class="welcome-intro">
+                   <strong>Evidencias SQA</strong> es una solución de alto rendimiento diseñada para optimizar la recolección de pruebas durante los ciclos de <strong>Quality Assurance</strong>. Permite un flujo de trabajo ágil desde la captura inicial hasta la exportación por lotes.
+                </p>
+            </div>
+
+            <h2>Características Principales</h2>
+            <div class="features-list">
+                <div class="feature-item">
+                    <div class="feature-header">
+                        <img src="Media/Pagina completa.png" /> <span>Pantalla Completa</span>
+                    </div>
+                    <div class="feature-desc">Desplazamiento automático y ensamblado inteligente para capturar sitios web sin cortes manuales.</div>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-header">
+                        <img src="Media/Area visible.png" /> <span>Área Visible</span>
+                    </div>
+                    <div class="feature-desc">Obtén una imagen instantánea de lo que ves en tu pestaña actual con un solo clic.</div>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-header">
+                        <img src="Media/Copiado.png" /> <span>Copiado Inteligente</span>
+                    </div>
+                    <div class="feature-desc">Permite copiar múltiples capturas al portapapeles respetando el orden de selección.</div>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-header">
+                        <img src="Media/Clipboard.png" /> <span>Carga Rápida</span>
+                    </div>
+                    <div class="feature-desc">Integra imágenes externas con Ctrl + V o arrastrando archivos directamente al visor.</div>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-header">
+                        <img src="Media/Historial.png" /> <span>Gestión de Resultados</span>
+                    </div>
+                    <div class="feature-desc">Panel centralizado para visualizar, editar notas y organizar tus capturas.</div>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-header">
+                        <img src="Media/masiva.png" /> <span>Exportación Masiva</span>
+                    </div>
+                    <div class="feature-desc">Descarga todas las evidencias de tu sesión de pruebas en un único archivo comprimido .ZIP.</div>
+                </div>
+            </div>
+
+            <div class="note">
+                <strong>💡 Consejo de QA:</strong> Todas las evidencias se guardan automáticamente en su equipo. Puede exportarlas en cualquier momento para generar un reporte consolidado.
+            </div>
+
+            <div class="cta-container">
+                <p style="margin-bottom: 20px; color: #666; font-style: italic;">¡Listo para optimizar tus pruebas!</p>
+                <button id="closeWelcome">Empezar ahora</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="welcome.js"></script>
+</body>
+</html>

@@ -2173,6 +2173,27 @@
 
 				const loadBitmap = async (src) => {
 					if (src instanceof Blob) return createImageBitmap(src);
+					// Si es una URL blob, convertirla a Blob primero
+					if (typeof src === 'string' && src.startsWith('blob:')) {
+						try {
+							const response = await fetch(src);
+							if (!response.ok) throw new Error('Failed to fetch blob URL');
+							const blob = await response.blob();
+							return createImageBitmap(blob);
+						} catch (fetchError) {
+							console.warn('Error fetching blob URL, trying alternative method:', fetchError);
+							// Fallback: crear elemento Image y convertir a Bitmap
+							return new Promise((resolve, reject) => {
+								const img = new Image();
+								img.onload = () => {
+									createImageBitmap(img).then(resolve).catch(reject);
+								};
+								img.onerror = () => reject(new Error('Failed to load image from blob URL'));
+								img.src = src;
+							});
+						}
+					}
+					// Para URLs normales (data URLs o http/https)
 					const resp = await fetch(src);
 					const blob = await resp.blob();
 					return createImageBitmap(blob);

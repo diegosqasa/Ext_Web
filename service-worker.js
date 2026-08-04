@@ -68,10 +68,12 @@ chrome.runtime.onInstalled.addListener((details) => {
     if (details.reason === 'install') {
         chrome.tabs.create({ url: chrome.runtime.getURL('welcome.html') });
     }
+    validarIconos();
     setupKeepAlive();
 });
 
 chrome.runtime.onStartup.addListener(() => {
+    validarIconos();
     setupKeepAlive();
 });
 
@@ -100,34 +102,78 @@ setupKeepAlive();
 
 // --- Gestión de Icono y Tema ---
 
-// --- Definición de la Función (Línea 103 aprox.) ---
-// service-worker.js
-
-// --- Gestión de Icono y Tema ---
-
-function actualizarIcono(theme) {
-  const isDark = theme === 'dark';
-  
-  // Usar rutas relativas (chrome.action.setIcon no acepta URLs absolutas de chrome.runtime.getURL)
-  const iconPaths = isDark ? {
+// Cache de iconos para evitar recargar rutas cada vez
+const ICON_CACHE = {
+  dark: {
     "16": "Media/SQA-16.png",
     "32": "Media/SQA-32.png",
     "48": "Media/SQA-48.png",
     "128": "Media/SQA-128.png"
-  } : {
+  },
+  light: {
     "16": "Media/SQA1-16.png",
     "32": "Media/SQA1-32.png",
     "48": "Media/SQA1-48.png",
     "128": "Media/SQA1-128.png"
-  };
+  }
+};
 
-  chrome.action.setIcon({ path: iconPaths }, () => {
-    if (chrome.runtime.lastError) {
-      console.warn('[SQA] Error aplicando icono:', chrome.runtime.lastError.message);
+let iconCacheValid = false;
+
+/**
+ * Valida que los iconos existan y sean accesibles
+ * Se ejecuta una vez al iniciar la extensión
+ */
+async function validarIconos() {
+  try {
+    const allIcons = [...Object.values(ICON_CACHE.dark), ...Object.values(ICON_CACHE.light)];
+    const validationPromises = allIcons.map(async (iconPath) => {
+      try {
+        const response = await fetch(chrome.runtime.getURL(iconPath), { method: 'HEAD' });
+        if (!response.ok) {
+          console.warn(`[SQA] Icono no encontrado o inaccesible: ${iconPath}`);
+          return false;
+        }
+        return true;
+      } catch (e) {
+        console.warn(`[SQA] Error validando icono ${iconPath}:`, e.message);
+        return false;
+      }
+    });
+    
+    const results = await Promise.all(validationPromises);
+    iconCacheValid = results.every(r => r);
+    
+    if (!iconCacheValid) {
+      console.error('[SQA] Algunos iconos no están disponibles. Verifica el directorio Media/');
     } else {
-      console.log(`[SQA] Icono actualizado a tema: ${theme}`);
+      console.log('[SQA] Validación de iconos completada exitosamente');
     }
-  });
+  } catch (e) {
+    console.error('[SQA] Error durante validación de iconos:', e.message);
+    iconCacheValid = false;
+  }
+}
+
+/**
+ * Actualiza el icono de la extensión según el tema
+ * @param {string} theme - 'dark' o 'light'
+ */
+function actualizarIcono(theme) {
+  try {
+    const isDark = theme === 'dark';
+    const iconPaths = isDark ? ICON_CACHE.dark : ICON_CACHE.light;
+
+    chrome.action.setIcon({ path: iconPaths }, () => {
+      if (chrome.runtime.lastError) {
+        console.error('[SQA] Error aplicando icono:', chrome.runtime.lastError.message);
+      } else {
+        console.debug(`[SQA] Icono actualizado a tema: ${theme}`);
+      }
+    });
+  } catch (e) {
+    console.error('[SQA] Error inesperado en actualizarIcono:', e.message);
+  }
 }
 
 chrome.tabs.onActivated.addListener((info) => {
@@ -153,13 +199,14 @@ chrome.commands.onCommand.addListener((command) => {
 // --- Mensajes ---
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (!message || !message.action) return;
-  
-  const handlers = {
-    'themeChanged': () => {
-      actualizarIcono(message.theme); // <- Solo la llamada aquí
-      sendResponse({ ok: true });
-    },
+  try {
+    if (!message || !message.action) return;
+    
+    const handlers = {
+      'themeChanged': () => {
+        actualizarIcono(message.theme);
+        sendResponse({ ok: true });
+      },
         [ACTIONS.captureAll]: () => {
             if (message.tabId) chrome.tabs.get(message.tabId, t => executeCapture(t, "captureAllPageScreenshot"));
             else if (message.tab) executeCapture(message.tab, "captureAllPageScreenshot");
@@ -235,6 +282,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         touchHeartbeat();
         return handlers[message.action]();
     }
+  } catch (e) {
+    console.error('[SQA] Error manejando mensaje:', message?.action, e.message);
+    sendResponse({ error: e.message });
+  }
 });
 
 function scheduleTempImageCleanup(chunkId) {

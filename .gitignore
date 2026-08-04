@@ -1,1 +1,18 @@
-Nothing needs to be added to .gitignore since the changes only include image files (.png) which should not be ignored according to the rules.
+```
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+
+# Environment
+.env
+.env.local
+*.env.*
+
+# Editors
+.vscode/
+.idea/
+
+# Original rules preserved
+*.log
+```

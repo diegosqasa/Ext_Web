@@ -92,9 +92,10 @@ Firefox/
 - `clipboardWrite`: Escritura en portapapeles
 - `storage`: Almacenamiento local
 - `unlimitedStorage`: Almacenamiento ilimitado
-- `offscreen`: Procesamiento en segundo plano
 - `debugger`: Captura mediante protocolo debugger
 - `<all_urls>`: Acceso a todas las URLs
+
+**Nota**: El permiso `offscreen` ha sido removido porque Firefox no lo soporta en MV3. El keepalive se maneja de forma nativa.
 
 ## Solución de problemas
 
@@ -116,7 +117,7 @@ Firefox/
 
 2. **Background Scripts**: Firefox MV3 soporta tanto `service_worker` como `scripts`. Usamos `scripts` para mejor compatibilidad.
 
-3. **Offscreen Documents**: Firefox tiene soporte limitado para documentos offscreen. La extensión está diseñada para funcionar sin ellos cuando sea necesario.
+3. **Offscreen Documents**: Firefox **no soporta** documentos offscreen en Manifest V3. La extensión ha sido actualizada para eliminar esta dependencia y usar el manejo nativo de keepalive de Firefox.
 
 4. **Debugger API**: Firefox soporta la API debugger pero requiere permisos adicionales en algunos casos.
 

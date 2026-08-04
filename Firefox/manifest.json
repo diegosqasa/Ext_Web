@@ -16,7 +16,6 @@
     "clipboardWrite",
     "storage",
     "unlimitedStorage",
-    "offscreen",
     "debugger"
   ],
   "browser_specific_settings": {

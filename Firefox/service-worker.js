@@ -84,18 +84,9 @@ chrome.runtime.onConnect.addListener((port) => {
 });
 
 async function setupKeepAlive() {
-    try {
-        const docUrl = chrome.runtime.getURL('offscreen.html');
-        if (typeof chrome.runtime.getContexts === 'function') {
-            const contexts = await chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'], documentUrls: [docUrl] });
-            if (contexts.length > 0) return;
-        }
-        await chrome.offscreen.createDocument({
-            url: 'offscreen.html',
-            reasons: ['WORKERS'],
-            justification: 'Keepalive para evitar el cold-start del service worker en capturas y popup.'
-        });
-    } catch (e) {}
+    // Firefox no soporta offscreen documents, esta función es un no-op
+    // El keepalive se maneja de forma nativa en Firefox
+    console.debug('[SQA] Keepalive: Firefox usa manejo nativo (offscreen no disponible)');
 }
 
 setupKeepAlive();

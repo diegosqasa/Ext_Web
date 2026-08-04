@@ -1,0 +1,220 @@
+# Evidencias SQA - Extensión de Captura de Pantalla
+
+**Versión:** 3.7.0  
+**Descripción:** Herramienta profesional de captura de pantalla diseñada para analistas de QA, que permite generar evidencias con metadatos integrados, gestión de historial, edición avanzada y adjuntos desde el portapapeles/arrastre.
+
+---
+
+## 📋 Changelog
+
+### v3.7.0 — 2026-05-02
+**Feature: Adjuntos desde Clipboard y Drag & Drop**
+- **Clipboard Paste**: Permite pegar imágenes directamente en el visor SQA (`Ctrl+V`). Las imágenes se procesan, normalizan y guardan automáticamente en el historial.
+- **Drag & Drop**: Soporte para arrastrar archivos de imagen desde el explorador de archivos directamente al visor para adjuntarlos como evidencia.
+- **Encabezado Integrado**: Se unificó la lógica del encabezado SQA; ahora las imágenes externas pegadas o arrastradas incluyen automáticamente el encabezado institucional (Logo, Título, Fecha y Navegador).
+- **Calidad y Normalización**: Las imágenes adjuntas se escalan a un ancho estándar de 627px usando suavizado de alta calidad para mantener la nitidez.
+- **Arquitectura Modular**: Introducción de `clipboardHandler.js`, `imageProcessor.js` y `storageManager.js` para gestionar el nuevo flujo de adjuntos.
+
+### v3.6.5 — 2026-04-23
+**Perf: Reducción de latencia en captura (~60% más rápido)**
+
+#### Optimizaciones de Tiempos
+- **`prepareTime`**: Reducido de 800ms → 300ms (con elementos scrollables) y de 100ms → 50ms (sin elementos scrollables). Primer frame de captura llega mucho antes.
+- **`waitTime` base**: Reducido de 500ms → 200ms por página (scrollTop > 0) y de 150ms → 80ms en la primera página.
+- **`waitTime` extra dinámico**: Reducido de +800ms → +300ms cuando la página crece durante la captura.
+- **`waitTime` extra en bloque final**: Reducido de +1000ms → +400ms.
+- **`_waitTime` en verificación final**: Reducido de 1000ms → 300ms cuando `scrollTop > 0`, y de 100ms → 60ms en el caso base.
+- **`isScrollLoadedElement` timeout**: Reducido de 1000ms → 400ms. Elimina el principal cuello de botella en páginas sin lazy-load.
+- **`changStyleForShot` delay**: Reducido de 100ms → 60ms (por página) y de 20ms → 10ms (setup inicial).
+- **Service Worker post-inyección**: Delay reducido de 500ms → 150ms al inyectar `content.js` por primera vez.
+- **Service Worker retry delay**: Reducido de 300ms → 150ms entre reintentos de mensaje.
+
+#### Impacto estimado
+| Escenario | Antes | Después |
+|:---|:---|:---|
+| Página simple (1 pantalla) | ~650ms | ~130ms |
+| Página con scroll (3 pantallas) | ~2.8s | ~1.0s |
+| Primera carga (inyección) | ~800ms | ~300ms |
+
+### v3.6.4 — 2026-04-22
+**Feature: Lógica de persistencia de texto DOM estilo GoFullPage**
+
+#### Cuadros de Texto (Nodos DOM)
+- **Persistencia de Nodos**: Los cuadros de texto ya no son solo objetos en el canvas durante la edición; permanecen como nodos DOM interactivos (`#annotation-layer`).
+- **Estado Dinámico**: Se usa `contenteditable` para la edición. Al terminar, se cambia a `contenteditable="false"` manteniendo el nodo visible.
+- **Capa Superior**: Implementado `z-index: 1000` para asegurar que el texto flote siempre sobre la imagen capturada.
+- **Sincronización**: Los nodos DOM se escalan y posicionan en tiempo real sincronizados con el Zoom y el lienzo.
+- **Renderizado Final**: Los nodos se fusionan al canvas al guardar para preservar las anotaciones en el PNG final.
+
+### v3.6.4 — 2026-04-22
+**Fix: Reestructuración Modular y Réplica GoFullPage**
+
+#### Mejoras y Correcciones
+- **DOM Persistence**: Los cuadros de texto ahora son nodos DOM reales que persisten tras la edición (estilo GoFullPage).
+- **Aislamiento de Herramientas**: Implementada lógica de propagación selectiva; interactuar con un objeto bloquea la activación accidental de otros.
+- **Auto-Selección**: Selección automática de objetos al tocar el canvas.
+- **Undo/Redo Robusto**: Se restauró la sincronización completa entre el canvas y la capa de anotaciones DOM.
+- **Estabilidad**: Eliminada corrupción de código en el flujo de eventos del editor.
+
+### v3.6.3 — 2026-04-22
+**Fix: Persistencia forzada de texto y estabilidad de interfaz**
+
+#### Mejoras en Cuadros de Texto
+- **Forzado de Visualización**: Al perder el foco (blur) o presionar Escape, el contenido del cuadro de texto se compromete automáticamente al canvas (lógica `display: block`).
+- **Ajuste de Escala**: Refinado el cálculo de `font-size` dinámico basado en el ancho y alto del contenedor.
+
+#### Lógica y Navegación
+- **Zoom**: Verificada y optimizada la funcionalidad de Zoom con la rueda del ratón (`Ctrl + Scroll`).
+- **Selección**: Consolidada la eliminación del botón "Seleccionar" y la activación de auto-selección en todos los modos de edición.
+
+### v3.6.2 — 2026-04-22
+**Fix: Funcionalidad avanzada de texto y validación de cancelación**
+
+#### Mejoras en Texto (Estilo GoFullPage)
+- **Ajuste Manual**: Implementado selector numérico de `font-size` en la barra de herramientas para el objeto seleccionado.
+- **Auto-Fit**: Redimensionamiento desde las esquinas ahora escala el tamaño de fuente proporcionalmente para llenar el contenedor sin desbordar.
+- **Persistencia**: El tamaño de fuente se guarda en el objeto y se mantiene al mover o re-editar.
+
+#### UX y Estabilidad
+- **Cancelación Segura**: Se garantizó que al presionar "Cancelar" se limpie todo el estado temporal (objetos y snapshots), evitando que se muestren ediciones no confirmadas al volver al visor.
+
+### v3.6.1 — 2026-04-22
+**Fix: Correcciones específicas de funcionalidad y UX**
+
+#### Mejoras y Correcciones
+- **Cuadros de Texto**: Habilitado redimensionado manual con ajuste dinámico (Text Fitting) tanto en ancho como en alto.
+- **Blur**: Reparado el efecto de desenfoque que no se consolidaba correctamente en la imagen base.
+- **Recortar (Crop)**: Corregida la función "Deshacer" (Undo) para que restaure las dimensiones del canvas.
+- **Navegación**: Optimizada la respuesta del Zoom mediante la rueda del ratón.
+- **UX**: Eliminado el botón "Seleccionar"; ahora la selección es automática al interactuar con cualquier objeto o en modo neutral.
+- **Estabilidad**: Validación de la función de cancelar edición para asegurar una limpieza completa del estado.
+
+### v3.6.0 — 2026-04-22
+**Feature: Editor avanzado con objetos seleccionables, crop, blur, resaltador y flujo neutral**
+
+#### Comportamiento al entrar en edición
+- **Zoom 50% por defecto** al abrir el editor (antes 100%).
+- **Estado neutro**: ninguna herramienta está activa al iniciar el editor. El usuario debe seleccionar explícitamente una herramienta.
+- **Navegación libre**: cuando ninguna herramienta está activa, el scroll del mouse mueve el área de trabajo sin interferir con las herramientas.
+- **Esc multi-función**: cierra el input de texto flotante → cancela crop → deselecciona objeto → regresa al estado neutro (en ese orden de prioridad).
+
+#### Herramientas nuevas
+- **🔲 Recortar (Crop):** Define un área arrastrando sobre el canvas. Los 4 handles de esquina permiten ajustar el recorte. Doble clic o Enter confirma el recorte; Esc cancela. El canvas se redimensiona al área recortada.
+- **🌟 Resaltador (Highlighter):** Pincel semitransparente (`globalAlpha: 0.38`) que resalta áreas sin tapar el contenido original. Atajo: `H`.
+- **🔵 Desenfoque (Blur):** Pixelación de la región seleccionada (downsample + upsample) para ocultar datos sensibles. Se aplica inmediatamente a la imagen base. Atajo: `B`.
+
+#### Objetos seleccionables e interactivos
+- **Herramienta Seleccionar** (`V`): Permite hacer clic sobre cualquier objeto dibujado (flecha, cuadro, texto, resaltador) para seleccionarlo.
+- **Mover** con drag del mouse o con las **teclas de flecha** (1px por tecla; 10px con Shift).
+- **Redimensionar** arrastrando los handles de esquina (cuadros, textos).
+- **Eliminar** objeto seleccionado con `Delete` o `Backspace`.
+- **Doble clic** en un texto seleccionado para re-editarlo.
+
+#### Cuadros de texto inteligentes
+- Dimensiones del cuadro ajustables via handles de resize en modo selección.
+- El tamaño de fuente se **auto-escala** para que el texto siempre quepa dentro del ancho del cuadro definido.
+
+#### UX y teclado
+- **Cursores dinámicos** por herramienta y estado: `crosshair` (dibujo), `text` (texto), `default` (seleccionar), `grab/grabbing` (mover objeto), `move` (hover sobre objeto), `nwse-resize` (handle de resize).
+- **Atajos de teclado de herramientas**: `V` Seleccionar, `A` Flecha, `R` Cuadro, `T` Texto, `H` Resaltador, `B` Blur, `C` Recortar.
+- **Status bar** en el editor: muestra instrucción contextual y coordenadas del cursor en tiempo real.
+- Toggle de herramienta: hacer clic en una herramienta activa la deselecciona (regresa a neutro).
+
+#### Técnico
+- Sistema de objetos vectoriales en memoria (`objects[]`) separado de la imagen base (`_baseImageData`). Los objetos se renderizan sobre la base en cada frame.
+- `commitObjectsToBase()`: fusiona todos los objetos al `_baseImageData` antes de guardar o aplicar crop.
+- `willReadFrequently: true` en el contexto 2D para evitar warnings de `getImageData`.
+- **Archivos modificados:** `result.html`, `result.js`, `Evidencias_SQA.md`
+
+### v3.6.0-editor — 2026-04-22
+**Stable: Consolidación del Motor de Edición**
+- **Motor**: Fabric.js optimizado con `calcOffset` dinámico y persistencia de escala.
+- **Estética**: Sistema de handles naranja SQA unificado con contraste blanco.
+- **Portapapeles**: Flujo de auto-copy resiliente con manejo de foco y atajo `Ctrl+C`.
+- **Atajos**: Soporte completo para `Undo (Ctrl+Z)`, `Redo (Ctrl+Y)`, `Delete` y `Enter`.
+- **UX**: Spinner de procesamiento en guardado y vistas deterministas.
+- **Archivos modificados:** `result.html`, `result.js`, `Evidencias_SQA.md`
+
+---
+
+### v3.2.4 — 2026-04-21
+**Feature: Editor de capturas con anotaciones básicas**
+- Botón "✏️ Editar" en el header del visor.
+- Herramientas: Flecha, Cuadro, Texto.
+- Deshacer (Ctrl+Z) / Rehacer (Ctrl+Y).
+- Paleta de colores y selector de grosor.
+- Guardar actualiza el registro en IndexedDB.
+- **Archivos modificados:** `result.html`, `result.js`, `Evidencias_SQA.md`
+
+### v3.2.3 — 2026-04-21
+**Fix: Regresión — modales/popups no aparecían en captura**
+- Se reemplazó `isHideableFixed()` por `classifyFixed()` con tres categorías: `keep`, `hide`, `auto`.
+- **Archivos modificados:** `content.js`, `manifest.json`, `Evidencias_SQA.md`
+
+### v3.2.2 — 2026-04-21
+**Fix: Elementos `position:fixed` en zona inferior sombreados incorrectamente**
+- Función helper `isHideableFixed(element, rect)` con criterios más precisos.
+- **Archivos modificados:** `content.js`, `manifest.json`, `Evidencias_SQA.md`
+
+### v3.2.1 — (baseline)
+- Encabezado dinámico con URL, fecha, navegador y logo SQA.
+- Progreso de captura animado en overlay azul.
+- Historial persistente en IndexedDB.
+
+---
+
+## 🛠️ Arquitectura Técnica
+
+### 1. Núcleo del Sistema
+- **`manifest.json`**: Permisos (`activeTab`, `scripting`, `storage`, `clipboardWrite`), service-worker, recursos web accesibles.
+- **`service-worker.js`**: Orquestador de capturas, gestión de mensajes, administración de IndexedDB (`SQAEvidence`).
+- **`jsconfig.json`**: IntelliSense y validación de tipos.
+
+### 2. Capa de Inyección (Content Script)
+- **`content.js`** (2400+ líneas): Cálculo DOM, scroll automático, encabezado dinámico en Canvas, tratamiento de elementos fijos.
+
+### 3. Interfaz de Usuario y Visor
+- **`result.html`**: Tres vistas: Visor, Historial, Editor.
+- **`result.js`**: Visor, historial, editor vectorial con objetos seleccionables, crop, blur, resaltador, undo/redo, zoom.
+
+---
+
+## 📊 Flujo de Datos
+
+1. **Activación**: Click en el icono de la extensión.
+2. **Inyección**: `service-worker` inyecta `content.js`.
+3. **Procesamiento**: Capturas parciales unidas en Canvas con encabezado.
+4. **Almacenamiento**: Imagen Base64 en IndexedDB.
+5. **Visualización**: `result.html` muestra la evidencia.
+6. **Edición opcional**: Editor vectorial permite anotar y guardar cambios.
+
+---
+
+## 🚀 Funcionalidades Clave
+
+| Función | Descripción |
+|:---|:---|
+| Encabezado Automático | URL, fecha, navegador en cada captura |
+| Historial Local | IndexedDB sin servidores externos |
+| Editor Vectorial | Flechas, cuadros, textos, resaltador, blur, crop |
+| Objetos Interactivos | Seleccionar, mover, redimensionar, eliminar |
+| Undo/Redo | Historial de estados completo |
+| Zoom Editor | Ctrl+Rueda, botones, pinch-to-zoom |
+| Descarga ZIP | Exportar todas las evidencias comprimidas |
+
+---
+
+## 📁 Estructura de Archivos
+
+| Archivo | Función |
+|:---|:---|
+| `manifest.json` | Descriptor de la extensión |
+| `service-worker.js` | Lógica de fondo y base de datos |
+| `content.js` | Lógica de captura y manipulación del DOM |
+| `result.html` / `result.js` | Visor, historial y editor |
+| `SQA.png` | Identidad visual (Logo) |
+| `jszip.min.js` | Compresión ZIP para descarga masiva |
+
+---
+
+> **Nota para Desarrolladores:** El sistema de unión de imágenes (`splicingImagesAndSendAction`) soporta alturas de hasta 90,000px, gestionando los límites de memoria de navegadores Chromium. El editor v3.6.0 usa un sistema de doble capa: `_baseImageData` (imagen rasterizada) + `objects[]` (objetos vectoriales en memoria), que se fusionan al guardar o aplicar crop.

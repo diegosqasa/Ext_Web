@@ -15,8 +15,7 @@
     "scripting",
     "clipboardWrite",
     "storage",
-    "unlimitedStorage",
-    "debugger"
+    "unlimitedStorage"
   ],
   "browser_specific_settings": {
     "gecko": {

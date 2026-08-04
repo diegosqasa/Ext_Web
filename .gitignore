@@ -1,4 +1,1 @@
-```
-# Build artifacts and packages
-*.xpi
-```
+Nothing needs to be added to .gitignore since only a manifest.json file was modified and no build artifacts, dependencies, or temporary files were detected in the changes.
